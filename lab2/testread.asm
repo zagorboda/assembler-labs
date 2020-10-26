@@ -1,16 +1,19 @@
+; 24 : -96
 STSEG SEGMENT PARA STACK "STACK"
 	DB 64 DUP ("STACK")
 STSEG ENDS
 
 DSEG SEGMENT PARA PUBLIC "DATA"
-	dump db 6, ?, 6 dup('?')
+    dump db 6, ?, 6 dup('?')
 	l db 0
-	is_negative db 0
+	first_char db 0
 	msg db "Bad input$"
-    number dw 0
+    msg_overflow db "Overflow after math operation$"
+    number dw 1
 DSEG ENDS
 
 CSEG SEGMENT PARA PUBLIC "CODE"
+.386
 MAIN PROC FAR
 ASSUME CS:CSEG,DS:DSEG,SS:STSEG
 
@@ -87,7 +90,7 @@ first_char_minus:
     ; mov ah, 2
     ; int 21h
 
-    mov is_negative, 1
+    mov first_char, 1
     jmp check_loop
 first_char_plus:
     inc di
@@ -97,8 +100,8 @@ first_char_plus:
     ; mov ah, 2
     ; int 21h
 
+    mov first_char, 2
     jmp check_loop
-    mov is_negative, 0
 ; pop ax
 check_loop:
     mov dl, [di]
@@ -130,7 +133,13 @@ check_loop:
     xor bx,bx
     xor dx,dx
     ; xor cx,cx
+    cmp first_char, 0
+    jg first_char_inc
     jmp print_loop
+
+first_char_inc:
+    inc di
+    dec cx 
 
 print_loop:
     mov bl, byte ptr [di]
@@ -140,6 +149,7 @@ print_loop:
     ; sub dl, "0"
     ; mov cl, byte [dump]
     sub bx, '0'
+    ; sub dl, '0'
     ; mov dh, 0
 
     push cx
@@ -153,29 +163,120 @@ print_loop:
     push dx
     mul bx
     pop dx
+
     add dx, ax
-
+    jo call_overflow
+    jc call_overflow
+    ; mov number, dx
+    ; sub dx, ax
     ; mov ax, [dump]
-
+    
     inc di
     dec cx
     jne print_loop
+    mov number, dx
+    xor dx, dx
+    mov dx, number
+    ; cmp dx,
+    ; cmp dx, 32767
+    ; jg call_overflow
+    add dx, 32767
+    ; jo call_overflow
+    jc call_overflow
+    sub dx, 32767
+    ; sub dx, 1
+    ; jc call_overflow
+    ; jg call_overflow
+    ; mov ax, dx
+    ; sub dx, 96
+    ; add dx, 32000
+    cmp first_char, 1
+    je math_op_minus
+    cmp first_char, 2
+    je math_op_plus
+    cmp first_char, 0
+    je math_op_plus
     jmp ending
+
+
+; jmp ending
 
 bad_input_label:
     call bad_input_proc
     ; cmp trigger, 0
     jmp ending
 
+math_op_minus:
+
+    add dx, 96
+    jmp ending
+
+math_op_plus:
+    cmp dx, 32767
+    jg call_overflow
+    sub dx, 96
+    jo call_overflow
+    
+    jo call_overflow
+    jmp ending
+
+call_overflow:
+    call overflow_proc
+    jmp end_end
+
 ending:
-    ; neg dx
-    ; xor ax, ax
-    ; sub ax, dx
+
+    ; mov bx, number
+    mov bx, dx
+    cmp bx, 0
+    jl print_minus_sign_neg
+    ; or bx, bx
+    ; jns m1
+    cmp first_char, 1
+    je print_minus_sign
+    jmp m1
+    print_minus_sign_neg:
+        mov al, '-'
+        int 29h
+        neg bx
+        jmp m1
+    print_minus_sign:
+        mov al, '-'
+        int 29h
+        ; neg bx
+    m1:
+        mov ax, bx
+        xor cx, cx
+        mov bx, 10
+    m2:
+        xor dx, dx
+        div bx
+        add dl, '0'
+        push dx
+        inc cx
+        test ax, ax
+        jnz m2
+    m3:
+        pop ax
+        int 29h
+        loop m3
+
+;     ; neg dx
+;     ; xor ax, ax
+;     ; sub ax, dx
+
+end_end:
     RET
     MAIN ENDP
 
 bad_input_proc:
     LEA DX, msg
+    MOV AH, 9
+    INT 21H
+    ret
+
+overflow_proc:
+    LEA DX, msg_overflow
     MOV AH, 9
     INT 21H
     ret
@@ -191,10 +292,10 @@ power_proc:
     
     dec cx
     je power_proc_ending
-    power:
+    power_proc_power:
         mul bx
         dec cl
-        jne power
+        jne power_proc_power
 
     power_proc_ending:
         ret
